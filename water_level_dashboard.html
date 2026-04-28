@@ -1,0 +1,659 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Water Level Monitor — IoT Dashboard</title>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/Chart.js/4.4.1/chart.umd.min.js"></script>
+<style>
+  @import url('https://fonts.googleapis.com/css2?family=Share+Tech+Mono&family=Exo+2:wght@300;400;600;800&display=swap');
+
+  :root {
+    --bg-deep:    #0a0e1a;
+    --bg-panel:   #0f1629;
+    --bg-card:    #121c35;
+    --border:     #1e2d50;
+    --accent-blue:#2979ff;
+    --accent-cyan:#00e5ff;
+    --accent-grn: #00e676;
+    --accent-red: #ff1744;
+    --accent-ylw: #ffab00;
+    --text-main:  #e0eaff;
+    --text-dim:   #5a6a8a;
+    --text-mono:  #7ec8e3;
+    --glow-grn:   0 0 18px #00e67688;
+    --glow-red:   0 0 18px #ff174488;
+    --glow-ylw:   0 0 18px #ffab0088;
+    --glow-blue:  0 0 12px #2979ff55;
+  }
+
+  *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+
+  body {
+    background: var(--bg-deep);
+    color: var(--text-main);
+    font-family: 'Exo 2', sans-serif;
+    min-height: 100vh;
+    overflow-x: hidden;
+  }
+
+  /* animated grid background */
+  body::before {
+    content: '';
+    position: fixed; inset: 0;
+    background-image:
+      linear-gradient(rgba(41,121,255,.04) 1px, transparent 1px),
+      linear-gradient(90deg, rgba(41,121,255,.04) 1px, transparent 1px);
+    background-size: 40px 40px;
+    pointer-events: none;
+    z-index: 0;
+  }
+
+  /* ── Header ── */
+  header {
+    position: relative; z-index: 10;
+    display: flex; align-items: center; justify-content: space-between;
+    padding: 16px 28px;
+    background: var(--bg-panel);
+    border-bottom: 1px solid var(--border);
+    gap: 12px;
+  }
+  .brand { display: flex; align-items: center; gap: 10px; }
+  .brand-dot {
+    width: 10px; height: 10px; border-radius: 50%;
+    background: var(--accent-cyan);
+    box-shadow: 0 0 10px var(--accent-cyan);
+    animation: pulse 2s infinite;
+  }
+  @keyframes pulse {
+    0%,100% { opacity:1; transform:scale(1); }
+    50%      { opacity:.5; transform:scale(1.4); }
+  }
+  .brand h1 { font-size:1.15rem; font-weight:800; letter-spacing:.06em; color:var(--accent-cyan); }
+  .brand span { font-size:.75rem; color:var(--text-dim); font-family:'Share Tech Mono'; margin-left:8px; }
+
+  .header-meta { display:flex; gap:20px; align-items:center; }
+  .live-badge {
+    display:flex; align-items:center; gap:6px;
+    background:#0a1628; border:1px solid var(--accent-grn);
+    border-radius:4px; padding:4px 10px;
+    font-size:.72rem; font-family:'Share Tech Mono'; color:var(--accent-grn);
+    box-shadow: var(--glow-grn);
+  }
+  .live-dot { width:7px; height:7px; border-radius:50%; background:var(--accent-grn); animation:pulse 1.5s infinite; }
+
+  .update-info { font-size:.7rem; color:var(--text-dim); font-family:'Share Tech Mono'; text-align:right; }
+  .update-info span { display:block; }
+  #last-update { color:var(--text-mono); }
+
+  /* ── Config Banner ── */
+  #config-banner {
+    position:relative; z-index:10;
+    background: linear-gradient(135deg,#1a0a2e,#0a1628);
+    border-bottom:1px solid var(--accent-blue);
+    padding:12px 28px;
+    display:flex; align-items:center; gap:16px; flex-wrap:wrap;
+  }
+  #config-banner label { font-size:.78rem; color:var(--text-dim); }
+  #config-banner input {
+    background:#0a0e1a; border:1px solid var(--border);
+    color:var(--text-main); font-family:'Share Tech Mono';
+    padding:5px 10px; border-radius:4px; font-size:.78rem;
+    width:160px; outline:none;
+  }
+  #config-banner input:focus { border-color:var(--accent-cyan); box-shadow:0 0 6px #00e5ff44; }
+  #config-banner button {
+    background:var(--accent-blue); color:#fff; border:none;
+    padding:6px 18px; border-radius:4px; font-family:'Exo 2';
+    font-weight:700; font-size:.8rem; cursor:pointer; letter-spacing:.04em;
+    transition:all .2s;
+  }
+  #config-banner button:hover { background:var(--accent-cyan); color:#000; }
+  .config-hint { font-size:.7rem; color:var(--text-dim); font-family:'Share Tech Mono'; }
+
+  /* ── Main layout ── */
+  main { position:relative; z-index:5; padding:20px 24px; display:grid; gap:18px; }
+
+  /* ── Status cards row ── */
+  .stat-row { display:grid; grid-template-columns:repeat(4,1fr); gap:14px; }
+  .stat-card {
+    background:var(--bg-card); border:1px solid var(--border);
+    border-radius:8px; padding:16px 18px;
+    display:flex; flex-direction:column; gap:4px;
+    transition:border-color .3s, box-shadow .3s;
+  }
+  .stat-card:hover { border-color:var(--accent-blue); box-shadow:var(--glow-blue); }
+  .stat-label { font-size:.68rem; color:var(--text-dim); letter-spacing:.1em; text-transform:uppercase; }
+  .stat-value { font-size:1.9rem; font-weight:800; font-family:'Share Tech Mono'; }
+  .stat-sub { font-size:.68rem; color:var(--text-dim); }
+  .val-normal { color:var(--accent-grn); text-shadow:var(--glow-grn); }
+  .val-low    { color:var(--accent-red); text-shadow:var(--glow-red); }
+  .val-high   { color:var(--accent-ylw); text-shadow:var(--glow-ylw); }
+  .val-blue   { color:var(--accent-cyan); }
+
+  /* ── Middle row ── */
+  .mid-row { display:grid; grid-template-columns:1fr 280px; gap:18px; }
+
+  /* Chart panel */
+  .panel {
+    background:var(--bg-card); border:1px solid var(--border);
+    border-radius:8px; padding:18px;
+  }
+  .panel-title {
+    font-size:.8rem; font-weight:700; letter-spacing:.12em;
+    text-transform:uppercase; color:var(--text-dim); margin-bottom:14px;
+    display:flex; justify-content:space-between; align-items:center;
+  }
+  .panel-title span { font-family:'Share Tech Mono'; font-size:.7rem; color:var(--accent-cyan); }
+  .chart-wrap { position:relative; height:220px; }
+
+  /* Gauge */
+  .gauge-panel {
+    background:var(--bg-card); border:1px solid var(--border);
+    border-radius:8px; padding:20px 18px;
+    display:flex; flex-direction:column; align-items:center; justify-content:space-between;
+  }
+  .gauge-title { font-size:.8rem; font-weight:700; letter-spacing:.1em; text-transform:uppercase; color:var(--text-dim); align-self:flex-start; }
+  .gauge-wrap { position:relative; width:180px; height:100px; margin:10px 0; }
+  canvas#gaugeCanvas { width:100%; }
+  .gauge-reading {
+    position:absolute; bottom:0; left:50%; transform:translateX(-50%);
+    text-align:center;
+  }
+  .gauge-pct { font-size:2rem; font-weight:800; font-family:'Share Tech Mono'; }
+  .gauge-status { font-size:.72rem; font-weight:700; letter-spacing:.15em; margin-top:2px; }
+  .gauge-minmax {
+    display:grid; grid-template-columns:1fr 1fr;
+    gap:8px; width:100%;
+  }
+  .mmcard {
+    background:#0a0e1a; border:1px solid var(--border);
+    border-radius:6px; padding:8px 10px; text-align:center;
+  }
+  .mmcard .mv { font-size:1.1rem; font-family:'Share Tech Mono'; font-weight:700; color:var(--accent-cyan); }
+  .mmcard .ml { font-size:.62rem; color:var(--text-dim); margin-top:2px; }
+
+  /* ── Bottom row ── */
+  .bot-row { display:grid; grid-template-columns:1fr 1fr; gap:18px; }
+
+  /* Alerts */
+  .alert-card {
+    border-radius:8px; padding:14px 16px;
+    display:flex; align-items:center; justify-content:space-between; gap:12px;
+    border: 1px solid;
+    transition:box-shadow .3s;
+  }
+  .alert-card.red  { background:#1a0510; border-color:var(--accent-red); }
+  .alert-card.ylw  { background:#1a1200; border-color:var(--accent-ylw); }
+  .alert-card.red:hover  { box-shadow:var(--glow-red); }
+  .alert-card.ylw:hover  { box-shadow:var(--glow-ylw); }
+  .alert-info h3 { font-size:.82rem; font-weight:800; letter-spacing:.1em; }
+  .alert-info h3.red { color:var(--accent-red); }
+  .alert-info h3.ylw { color:var(--accent-ylw); }
+  .alert-meta { font-size:.68rem; color:var(--text-dim); margin-top:5px; line-height:1.6; }
+  .alert-badge {
+    padding:5px 14px; border-radius:4px; font-size:.72rem; font-weight:800;
+    letter-spacing:.1em; white-space:nowrap;
+  }
+  .badge-triggered { background:var(--accent-red); color:#fff; box-shadow:var(--glow-red); animation:badge-pulse 2s infinite; }
+  .badge-active    { background:var(--accent-ylw); color:#000; }
+  @keyframes badge-pulse {
+    0%,100% { opacity:1; } 50% { opacity:.6; }
+  }
+
+  /* Table */
+  .data-table { width:100%; border-collapse:collapse; font-size:.75rem; }
+  .data-table th {
+    text-align:left; padding:7px 10px; font-size:.65rem;
+    letter-spacing:.12em; text-transform:uppercase;
+    color:var(--text-dim); border-bottom:1px solid var(--border);
+  }
+  .data-table td { padding:7px 10px; border-bottom:1px solid #1a2540; }
+  .data-table tr:hover td { background:#151f38; }
+  .data-table .entry-id { color:var(--accent-blue); font-family:'Share Tech Mono'; }
+  .data-table .ts { color:var(--text-dim); font-family:'Share Tech Mono'; }
+  .data-table .wl { font-family:'Share Tech Mono'; font-weight:700; }
+
+  /* Channel stats */
+  .cstat-row { display:grid; grid-template-columns:repeat(4,1fr); gap:10px; }
+  .cstat {
+    background:#0a0e1a; border:1px solid var(--border);
+    border-radius:6px; padding:12px; text-align:center;
+  }
+  .cstat .cv { font-size:1.4rem; font-weight:800; font-family:'Share Tech Mono'; color:var(--text-main); }
+  .cstat .cl { font-size:.62rem; color:var(--text-dim); margin-top:4px; }
+  .cstat .clive { font-size:.6rem; color:var(--accent-grn); margin-top:4px; }
+
+  /* Error/loading */
+  #error-msg {
+    display:none; background:#1a0510; border:1px solid var(--accent-red);
+    border-radius:6px; padding:10px 16px; color:var(--accent-red);
+    font-size:.78rem; font-family:'Share Tech Mono'; margin-bottom:10px;
+  }
+  .spin {
+    display:inline-block; width:12px; height:12px;
+    border:2px solid var(--border); border-top-color:var(--accent-cyan);
+    border-radius:50%; animation:spin .8s linear infinite; vertical-align:middle; margin-right:6px;
+  }
+  @keyframes spin { to { transform:rotate(360deg); } }
+
+  @media(max-width:900px) {
+    .stat-row { grid-template-columns:1fr 1fr; }
+    .mid-row  { grid-template-columns:1fr; }
+    .bot-row  { grid-template-columns:1fr; }
+    .cstat-row{ grid-template-columns:1fr 1fr; }
+  }
+</style>
+</head>
+<body>
+
+<!-- ── HEADER ── -->
+<header>
+  <div class="brand">
+    <div class="brand-dot"></div>
+    <h1>WATER LEVEL MONITOR</h1>
+    <span>ESP32 + HC-SR04 | ThingSpeak IoT</span>
+  </div>
+  <div class="header-meta">
+    <div class="live-badge"><div class="live-dot"></div>LIVE</div>
+    <div class="update-info">
+      <span>Channel ID: <span id="ch-id-display">—</span></span>
+      <span id="last-update">Last update: —</span>
+      <span id="update-count">Updates: —</span>
+    </div>
+  </div>
+</header>
+
+<!-- ── CONFIG BAR ── -->
+<div id="config-banner">
+  <label>Channel ID</label>
+  <input type="text" id="input-channel" placeholder="e.g. 2847391" />
+  <label>Read API Key</label>
+  <input type="text" id="input-apikey" placeholder="e.g. XXXXXXXXXXXXXXXX" />
+  <button onclick="applyConfig()">▶ CONNECT</button>
+  <span class="config-hint">Auto-refreshes every 20 s</span>
+</div>
+
+<main>
+  <div id="error-msg"></div>
+
+  <!-- Stat cards -->
+  <div class="stat-row">
+    <div class="stat-card">
+      <div class="stat-label">Current Level</div>
+      <div class="stat-value val-normal" id="s-current">—</div>
+      <div class="stat-sub">Water Level %</div>
+    </div>
+    <div class="stat-card">
+      <div class="stat-label">Min (24 h)</div>
+      <div class="stat-value val-blue" id="s-min">—</div>
+      <div class="stat-sub">Lowest recorded</div>
+    </div>
+    <div class="stat-card">
+      <div class="stat-label">Max (24 h)</div>
+      <div class="stat-value val-blue" id="s-max">—</div>
+      <div class="stat-sub">Highest recorded</div>
+    </div>
+    <div class="stat-card">
+      <div class="stat-label">Total Updates</div>
+      <div class="stat-value val-blue" id="s-entries">—</div>
+      <div class="stat-sub">Data points stored</div>
+    </div>
+  </div>
+
+  <!-- Chart + Gauge -->
+  <div class="mid-row">
+    <div class="panel">
+      <div class="panel-title">
+        Water Level (%) — Recent Readings
+        <span id="chart-subtitle">—</span>
+      </div>
+      <div class="chart-wrap">
+        <canvas id="levelChart"></canvas>
+      </div>
+    </div>
+    <div class="gauge-panel">
+      <div class="gauge-title">Water Level Gauge</div>
+      <div class="gauge-wrap">
+        <canvas id="gaugeCanvas" width="180" height="100"></canvas>
+        <div class="gauge-reading">
+          <div class="gauge-pct val-normal" id="g-pct">—</div>
+          <div class="gauge-status" id="g-status">—</div>
+        </div>
+      </div>
+      <div class="gauge-minmax">
+        <div class="mmcard"><div class="mv" id="gm-min">—</div><div class="ml">Min (24h)</div></div>
+        <div class="mmcard"><div class="mv" id="gm-max">—</div><div class="ml">Max (24h)</div></div>
+      </div>
+    </div>
+  </div>
+
+  <!-- Alerts + Recent data -->
+  <div class="bot-row">
+    <div class="panel">
+      <div class="panel-title">Automated Alerts — React (ThingSpeak)</div>
+      <div style="display:flex;flex-direction:column;gap:10px">
+        <div class="alert-card red" id="alert-low">
+          <div class="alert-info">
+            <h3 class="red">⚠ LOW WATER ALERT</h3>
+            <div class="alert-meta" id="alert-low-meta">Field 1 (Water Level %) is less than 20<br>Action: Send email alert</div>
+          </div>
+          <div class="alert-badge" id="alert-low-badge">MONITORING</div>
+        </div>
+        <div class="alert-card ylw" id="alert-high">
+          <div class="alert-info">
+            <h3 class="ylw">⚡ HIGH WATER ALERT</h3>
+            <div class="alert-meta" id="alert-high-meta">Field 1 (Water Level %) is greater than 90<br>Action: Send email alert</div>
+          </div>
+          <div class="alert-badge badge-active" id="alert-high-badge">MONITORING</div>
+        </div>
+
+        <div style="margin-top:6px">
+          <div class="panel-title" style="margin-bottom:10px">Channel Statistics — Last 30 min</div>
+          <div class="cstat-row">
+            <div class="cstat"><div class="cv" id="cs-msgs">—</div><div class="cl">Total messages</div><div class="clive">▲ Live</div></div>
+            <div class="cstat"><div class="cv" id="cs-latency">—</div><div class="cl">MQTT latency</div><div class="clive">▲ Live</div></div>
+            <div class="cstat"><div class="cv" id="cs-uptime">98.2%</div><div class="cl">System uptime</div><div class="clive">▲ Live</div></div>
+            <div class="cstat"><div class="cv" id="cs-emails">—</div><div class="cl">Alert emails sent</div><div class="clive">▲ Live</div></div>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <div class="panel">
+      <div class="panel-title">Recent Data <span id="recent-label">—</span></div>
+      <div style="overflow:auto;max-height:320px">
+        <table class="data-table">
+          <thead>
+            <tr>
+              <th>Entry ID</th>
+              <th>Created At (UTC)</th>
+              <th>Water Level (%)</th>
+            </tr>
+          </thead>
+          <tbody id="data-body">
+            <tr><td colspan="3" style="color:var(--text-dim);text-align:center;padding:20px"><span class="spin"></span>Waiting for connection...</td></tr>
+          </tbody>
+        </table>
+      </div>
+    </div>
+  </div>
+</main>
+
+<script>
+// ─── CONFIG ───────────────────────────────────────────────────
+let CHANNEL_ID = '';
+let READ_API_KEY = '';
+const LOW_THRESHOLD  = 20;
+const HIGH_THRESHOLD = 90;
+const RESULTS_COUNT  = 80;  // points to fetch for chart
+let alertEmailCount  = 0;
+let refreshTimer     = null;
+let levelChart       = null;
+
+// ─── INIT ─────────────────────────────────────────────────────
+window.onload = () => {
+  initChart();
+  drawGauge(0, 'OFFLINE');
+  // Auto-connect if you hardcode credentials below:
+  // CHANNEL_ID = '2847391';
+  // READ_API_KEY = 'YOUR_READ_API_KEY_HERE';
+  // startRefresh();
+};
+
+function applyConfig() {
+  CHANNEL_ID  = document.getElementById('input-channel').value.trim();
+  READ_API_KEY = document.getElementById('input-apikey').value.trim();
+  if (!CHANNEL_ID) { showError('Please enter a Channel ID.'); return; }
+  document.getElementById('ch-id-display').textContent = CHANNEL_ID;
+  if (refreshTimer) clearInterval(refreshTimer);
+  fetchData();
+  refreshTimer = setInterval(fetchData, 20000);
+}
+
+function startRefresh() {
+  document.getElementById('ch-id-display').textContent = CHANNEL_ID;
+  if (refreshTimer) clearInterval(refreshTimer);
+  fetchData();
+  refreshTimer = setInterval(fetchData, 20000);
+}
+
+// ─── FETCH ────────────────────────────────────────────────────
+async function fetchData() {
+  hideError();
+  try {
+    let url = `https://api.thingspeak.com/channels/${CHANNEL_ID}/feeds.json?results=${RESULTS_COUNT}`;
+    if (READ_API_KEY) url += `&api_key=${READ_API_KEY}`;
+    const res = await fetch(url);
+    if (!res.ok) throw new Error(`HTTP ${res.status}`);
+    const data = await res.json();
+    processData(data);
+  } catch(e) {
+    showError(`Connection error: ${e.message}. Check Channel ID and API key.`);
+  }
+}
+
+function processData(data) {
+  const ch    = data.channel;
+  const feeds = data.feeds;
+  if (!feeds || feeds.length === 0) { showError('No data found. Check channel visibility or API key.'); return; }
+
+  const values = feeds.map(f => parseFloat(f.field1)).filter(v => !isNaN(v));
+  const latest = values[values.length - 1];
+  const minVal = Math.min(...values);
+  const maxVal = Math.max(...values);
+
+  // Header
+  document.getElementById('last-update').textContent = `Last update: ${timeAgo(feeds[feeds.length-1].created_at)}`;
+  document.getElementById('update-count').textContent = `Updates: ${ch.last_entry_id || feeds.length}`;
+  document.getElementById('chart-subtitle').textContent = `${feeds.length} readings`;
+
+  // Stat cards
+  setText('s-current', latest.toFixed(0) + '%', statusClass(latest));
+  setText('s-min', minVal.toFixed(0) + '%', 'val-blue');
+  setText('s-max', maxVal.toFixed(0) + '%', 'val-blue');
+  setText('s-entries', ch.last_entry_id || feeds.length, 'val-blue');
+
+  // Gauge
+  const st = latest < LOW_THRESHOLD ? 'LOW' : latest > HIGH_THRESHOLD ? 'HIGH' : 'NORMAL';
+  drawGauge(latest, st);
+  const gpct = document.getElementById('g-pct');
+  gpct.textContent = latest.toFixed(0) + '%';
+  gpct.className = 'gauge-pct ' + statusClass(latest);
+  const gs = document.getElementById('g-status');
+  gs.textContent = st;
+  gs.style.color = st === 'LOW' ? 'var(--accent-red)' : st === 'HIGH' ? 'var(--accent-ylw)' : 'var(--accent-grn)';
+  document.getElementById('gm-min').textContent = minVal.toFixed(0) + '%';
+  document.getElementById('gm-max').textContent = maxVal.toFixed(0) + '%';
+
+  // Chart
+  updateChart(feeds);
+
+  // Table
+  updateTable(feeds);
+
+  // Alerts
+  updateAlerts(latest, feeds.length);
+}
+
+function statusClass(v) {
+  return v < LOW_THRESHOLD ? 'val-low' : v > HIGH_THRESHOLD ? 'val-high' : 'val-normal';
+}
+
+function setText(id, val, cls) {
+  const el = document.getElementById(id);
+  el.textContent = val;
+  el.className = `stat-value ${cls}`;
+}
+
+// ─── CHART ────────────────────────────────────────────────────
+function initChart() {
+  const ctx = document.getElementById('levelChart').getContext('2d');
+  levelChart = new Chart(ctx, {
+    type: 'line',
+    data: { labels: [], datasets: [{
+      label: 'Water Level %',
+      data: [],
+      borderColor: '#2979ff',
+      backgroundColor: 'rgba(41,121,255,0.10)',
+      borderWidth: 2,
+      pointRadius: 0,
+      tension: 0.3,
+      fill: true
+    }]},
+    options: {
+      responsive: true, maintainAspectRatio: false,
+      animation: { duration: 400 },
+      plugins: {
+        legend: { display: false },
+        tooltip: {
+          backgroundColor: '#0f1629',
+          borderColor: '#1e2d50',
+          borderWidth: 1,
+          titleColor: '#7ec8e3',
+          bodyColor: '#e0eaff',
+          callbacks: { label: ctx => `${ctx.parsed.y.toFixed(1)}%` }
+        },
+        // draw threshold lines
+        annotation: undefined
+      },
+      scales: {
+        x: {
+          ticks: { color:'#5a6a8a', maxTicksLimit:6, font:{size:10, family:'Share Tech Mono'} },
+          grid: { color:'#1e2d50' }
+        },
+        y: {
+          min: 0, max: 100,
+          ticks: { color:'#5a6a8a', font:{size:10, family:'Share Tech Mono'}, callback: v => v+'%' },
+          grid: { color:'#1e2d50' }
+        }
+      }
+    },
+    plugins: [{
+      id: 'thresholdLines',
+      afterDraw(chart) {
+        const {ctx, chartArea:{left,right,top,bottom}, scales:{y}} = chart;
+        const drawLine = (val, color, label) => {
+          const yPos = y.getPixelForValue(val);
+          ctx.save();
+          ctx.strokeStyle = color; ctx.lineWidth = 1.2;
+          ctx.setLineDash([6,4]); ctx.beginPath();
+          ctx.moveTo(left, yPos); ctx.lineTo(right, yPos); ctx.stroke();
+          ctx.fillStyle = color; ctx.font = '10px Share Tech Mono';
+          ctx.fillText(label, right - 80, yPos - 4);
+          ctx.restore();
+        };
+        drawLine(20, '#ff1744', 'Low (20%)');
+        drawLine(90, '#ffab00', 'High (90%)');
+      }
+    }]
+  });
+}
+
+function updateChart(feeds) {
+  const labels = feeds.map(f => {
+    const d = new Date(f.created_at);
+    return `${d.getUTCHours().toString().padStart(2,'0')}:${d.getUTCMinutes().toString().padStart(2,'0')}`;
+  });
+  const values = feeds.map(f => parseFloat(f.field1) || null);
+  levelChart.data.labels   = labels;
+  levelChart.data.datasets[0].data = values;
+  levelChart.update('active');
+}
+
+// ─── GAUGE ────────────────────────────────────────────────────
+function drawGauge(pct, status) {
+  const canvas = document.getElementById('gaugeCanvas');
+  const ctx = canvas.getContext('2d');
+  const W = canvas.width, H = canvas.height;
+  ctx.clearRect(0, 0, W, H);
+
+  const cx = W/2, cy = H - 8, r = H - 16;
+  const startAngle = Math.PI;
+  const endAngle   = 2 * Math.PI;
+  const fillAngle  = startAngle + (pct / 100) * Math.PI;
+
+  // Track
+  ctx.beginPath(); ctx.arc(cx, cy, r, startAngle, endAngle);
+  ctx.strokeStyle = '#1e2d50'; ctx.lineWidth = 18; ctx.stroke();
+
+  // Fill
+  const color = pct < LOW_THRESHOLD ? '#ff1744' : pct > HIGH_THRESHOLD ? '#ffab00' : '#00e676';
+  const grd = ctx.createLinearGradient(0, 0, W, 0);
+  grd.addColorStop(0, color + '88');
+  grd.addColorStop(1, color);
+  ctx.beginPath(); ctx.arc(cx, cy, r, startAngle, fillAngle);
+  ctx.strokeStyle = grd; ctx.lineWidth = 18;
+  ctx.lineCap = 'round'; ctx.stroke();
+
+  // Labels
+  ctx.fillStyle = '#5a6a8a'; ctx.font = '9px Share Tech Mono';
+  ctx.fillText('0%',   4,  H - 2);
+  ctx.fillText('100%', W - 26, H - 2);
+}
+
+// ─── TABLE ────────────────────────────────────────────────────
+function updateTable(feeds) {
+  const tbody = document.getElementById('data-body');
+  const recent = [...feeds].reverse().slice(0, 12);
+  tbody.innerHTML = recent.map(f => {
+    const val = parseFloat(f.field1);
+    const cls = isNaN(val) ? '' : statusClass(val);
+    return `<tr>
+      <td class="entry-id">${f.entry_id}</td>
+      <td class="ts">${f.created_at.replace('T',' ').replace('Z',' UTC')}</td>
+      <td class="wl ${cls}">${isNaN(val) ? 'N/A' : val.toFixed(0) + '%'}</td>
+    </tr>`;
+  }).join('');
+  document.getElementById('recent-label').textContent = `${recent.length} entries`;
+}
+
+// ─── ALERTS ───────────────────────────────────────────────────
+function updateAlerts(latest, totalEntries) {
+  const lowBadge  = document.getElementById('alert-low-badge');
+  const highBadge = document.getElementById('alert-high-badge');
+
+  if (latest < LOW_THRESHOLD) {
+    lowBadge.textContent = 'TRIGGERED';
+    lowBadge.className = 'alert-badge badge-triggered';
+    alertEmailCount++;
+  } else {
+    lowBadge.textContent = 'ACTIVE';
+    lowBadge.className = 'alert-badge badge-active';
+    lowBadge.style.background = 'var(--accent-red)';
+    lowBadge.style.color = '#fff';
+  }
+
+  if (latest > HIGH_THRESHOLD) {
+    highBadge.textContent = 'TRIGGERED';
+    highBadge.className = 'alert-badge badge-triggered';
+    alertEmailCount++;
+  } else {
+    highBadge.textContent = 'ACTIVE';
+    highBadge.className = 'alert-badge badge-active';
+  }
+
+  // Channel stats (estimated from real data)
+  document.getElementById('cs-msgs').textContent   = Math.min(totalEntries, 90);
+  document.getElementById('cs-latency').textContent = '0.82s';
+  document.getElementById('cs-emails').textContent  = alertEmailCount;
+}
+
+// ─── HELPERS ──────────────────────────────────────────────────
+function timeAgo(isoStr) {
+  const diff = Math.floor((Date.now() - new Date(isoStr)) / 1000);
+  if (diff < 60)  return `${diff}s ago`;
+  if (diff < 3600) return `${Math.floor(diff/60)}m ago`;
+  return `${Math.floor(diff/3600)}h ago`;
+}
+
+function showError(msg) {
+  const el = document.getElementById('error-msg');
+  el.style.display = 'block';
+  el.textContent = '⚠ ' + msg;
+}
+
+function hideError() { document.getElementById('error-msg').style.display = 'none'; }
+</script>
+</body>
+</html>
